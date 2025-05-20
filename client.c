@@ -5,18 +5,45 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #define PORT 1337
-
-int socket (int domain, int type, int protocol);
-int setsockopt(int sockfd, int level, int option_name, const void *value_of_option, socklen_t option_length);
-
-int bind(int sockfd, const struct sockaddr *my_addr, socklen_t addrlen);
-int connect(int socket_descriptor, const struct sockaddr *address, socklen_t length_of_address);
 
 
 int main(){
-	//int sockopt = setsockopt(sockfd, )
+	int opt = 1;
+	char buffer[1024];
+	int sockopt;
+	struct sockaddr_in sock_addr;
+	socklen_t addr_size = sizeof(sock_addr);
+	
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd == -1){
+		perror("Failed to create socket");
+		return 0;
+	}
 
-	printf("It works!\n");
+	// Set address and port
+	sock_addr.sin_family = AF_INET;
+	sock_addr.sin_port = htons(PORT);
+	sock_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	
+	// Reuse address and port
+	sockopt = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+	sockopt = setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+	// Buffer size for send and receive
+	sockopt = setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &buffer, sizeof(buffer));
+	sockopt = setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &buffer, sizeof(buffer));
+	
+	int conn = connect(sockfd, (struct sockaddr *)&sock_addr, addr_size);
+	if (conn == -1){
+		perror("Connection error");
+		return 0;
+	}
+	
+	recv(sockfd, buffer, sizeof(buffer), 0);
+	printf("Client received: %s\n", buffer);
+	strcpy(buffer, "Hello from client!");
+	write(sockfd, buffer, strlen(buffer));
+
 	return 0;
 }
