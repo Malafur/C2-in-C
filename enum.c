@@ -33,10 +33,10 @@ int sys_info(){
 }
 
 // Use getservbyport_r() on the server end to get the description for each port.
-int ports(){
+int port_scanner(){
 	int opt = 1;
 	int port, count;
-	int *ports, *temp;
+	int *ports;
 	struct sockaddr_in sock_addr;
 	socklen_t addr_size = sizeof(sock_addr);
 	
@@ -72,8 +72,7 @@ int ports(){
 			continue;
 		}
 		else if (conn != -1){
-			temp = realloc(ports, (count + 1)*sizeof(*ports));
-			ports = temp;
+			ports = realloc(ports, (count + 1)*sizeof(*ports));
 			ports[count++] = port;
 			printf("Port open: %i\n", port);
 			close(sockfd);
@@ -100,13 +99,16 @@ struct ip {
 	char if_name[IFNAMSIZ];
 	char addr[NI_MAXHOST];
 	char netmask[NI_MAXHOST];
+	char net_addr[NI_MAXHOST];
+	char bro_addr[NI_MAXHOST];
 };
+
+struct ip v4, v6;
 
 struct ip get_ipmask(){
 	struct ifaddrs *ifaddr;
 	int family, h, nm;
 	char host[NI_MAXHOST], netmask[NI_MAXHOST];
-	struct ip v4, v6;
 
 	if (getifaddrs(&ifaddr) == -1) {
 		perror("getifaddrs");
@@ -148,18 +150,16 @@ struct ip get_ipmask(){
 			strcpy(v4.if_name, ifa->ifa_name);
 			strcpy(v4.addr, host);
 			strcpy(v4.netmask, netmask);
-			//printf("IPv4 IF Name: %s\n", v4.if_name);
-			//printf("IPv4 Addr: %s\n", v4.addr);
-			//printf("IPv4 Netmask: %s\n", v4.netmask);
+			//strcpy(v4.net_addr, "");
+			//strcpy(v4.bro_addr, "");
 		}
 		
 		else if (family == AF_INET6){
 			strcpy(v6.if_name, ifa->ifa_name);
 			strcpy(v6.addr, host);
 			strcpy(v6.netmask, netmask);
-			//printf("\nIPv6 IF Name: %s\n", v6.if_name);
-			//printf("IPv6 Addr: %s\n", v6.addr);
-			//printf("IPv6 Netmask: %s\n", v6.netmask);
+			//strcpy(v6.net_addr, "");
+			//strcpy(v6.bro_addr, "");
 		}
 		
 	}
@@ -170,31 +170,58 @@ struct ip get_ipmask(){
 	return v4;
 }
 
+int ip_range_calc(){
+	get_ipmask();
+	
+	printf("%s", v4.net_addr);
+
+	uint8_t sub_buff[4];
+	uint8_t ip_buff[4];
+	
+	// Add null terminator to the end
+	v4.netmask[NI_MAXHOST - 1] = v4.addr[NI_MAXHOST - 1] = '\0';
+	
+	printf("%s\n", v4.netmask);
+	printf("%s\n", v4.addr);
+	
+	// Grab the IP addr range
+	int sub_res = inet_pton(AF_INET, v4.netmask, sub_buff);
+	int ip_res = inet_pton(AF_INET, v4.addr, ip_buff);
+
+    if (sub_res == 1 && ip_res == 1) {
+		for (int i = 0; i < 4; i++) {
+			uint8_t and_sub = sub_buff[i] & ip_buff[i];
+			uint8_t and_not_sub = ip_buff[i] | ~sub_buff[i];
+			
+			ssize_t len;
+			
+			if (i == 3){
+				len = strlen(v4.net_addr);
+				snprintf(v4.net_addr + len, sizeof(v4.net_addr) - len, "%d", and_sub);
+				len = strlen(v4.bro_addr);
+				snprintf(v4.bro_addr + len, sizeof(v4.bro_addr) - len, "%d", and_not_sub);
+			}
+			else{
+				len = strlen(v4.net_addr);
+				snprintf(v4.net_addr + len, sizeof(v4.net_addr) - len, "%d.", and_sub);
+				len = strlen(v4.bro_addr);
+				snprintf(v4.bro_addr + len, sizeof(v4.net_addr) - len, "%d.", and_not_sub);
+			}
+		}
+		printf("\n");
+		printf("net_addr: %s\n", v4.net_addr);
+		printf("bro_addr: %s\n", v4.bro_addr);
+	}
+	return 0;
+}
+
 
 int ip_scanner(){
-	int opt, total_hosts; opt = total_hosts = 1;
+	int opt, total_hosts, calc; opt = 1;
 	struct sockaddr_in sock_addr;
 	socklen_t addr_size = sizeof(sock_addr);
 	
-	struct ip v4 = get_ipmask();
-	printf("%s\n", v4.netmask);
-	unsigned char buff[3];
-	
-	// Grab the IP addr range
-	int s = inet_pton(AF_INET, v4.netmask, buff);
-
-    if (s == 1) {
-        printf("Binary: ");
-        for (int i = 0; i < 4; i++) {
-			if (buff[i] == 255)
-				continue;
-			printf("%u ", buff[i]);
-			int calc = 255 - buff[i];
-			//printf("Calc: %d\n", calc);
-			total_hosts *= calc;
-		}
-		printf("\nRange: %d\n", total_hosts);
-    }
+	printf("%s\n", v4.net_addr);
 	
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd == -1){
@@ -214,5 +241,6 @@ int ip_scanner(){
 
 
 int main(){
+	ip_range_calc();
 	ip_scanner();
 }
